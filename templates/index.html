@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 反诈分析卫士</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .loader { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800">
+    <div class="max-w-2xl mx-auto py-10 px-4">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-slate-900">🛡️ AI 通话反诈卫士</h1>
+            <p class="text-sm text-slate-500 mt-2">基于硅基流动 DeepSeek/Qwen 模型驱动</p>
+        </header>
+
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <form id="analyzeForm" class="space-y-6">
+                <!-- 切换按钮 -->
+                <div class="flex border-b">
+                    <button type="button" id="tab-audio" class="flex-1 py-2 text-blue-600 border-b-2 border-blue-600 font-medium" onclick="toggleTab('audio')">🎙️ 上传录音</button>
+                    <button type="button" id="tab-text" class="flex-1 py-2 text-gray-500 hover:text-blue-600" onclick="toggleTab('text')">📝 粘贴文本</button>
+                </div>
+
+                <!-- 录音输入 -->
+                <div id="area-audio" class="block">
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:bg-blue-50 transition cursor-pointer relative">
+                        <input type="file" name="audio_file" accept="audio/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="document.getElementById('file-name').innerText = this.files[0].name">
+                        <p class="text-gray-500">点击上传音频文件 (mp3/wav/m4a)</p>
+                        <p id="file-name" class="text-blue-600 font-semibold mt-2 text-sm"></p>
+                    </div>
+                </div>
+
+                <!-- 文本输入 -->
+                <div id="area-text" class="hidden">
+                    <textarea name="text_input" class="w-full border rounded-lg p-3 h-32 focus:ring-2 focus:ring-blue-500 outline-none resize-none" placeholder="请粘贴通话内容..."></textarea>
+                </div>
+
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition flex justify-center items-center">
+                    <span id="btn-text">开始智能分析</span>
+                    <div id="loading" class="loader ml-2 hidden"></div>
+                </button>
+            </form>
+        </div>
+
+        <!-- 结果展示 -->
+        <div id="result" class="hidden mt-6 bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h2 class="text-xl font-bold">分析报告</h2>
+                    <p class="text-sm text-gray-500 mt-1">风险等级：<span id="risk-badge" class="px-2 py-0.5 rounded text-white text-xs font-bold"></span></p>
+                </div>
+                <div class="text-right">
+                    <div class="text-3xl font-bold" id="score-val">0%</div>
+                    <div class="text-xs text-gray-400">诈骗概率</div>
+                </div>
+            </div>
+            
+            <!-- 进度条 -->
+            <div class="w-full bg-gray-200 rounded-full h-2.5 mb-6">
+                <div id="score-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+            </div>
+
+            <div class="space-y-4">
+                <div class="bg-red-50 p-4 rounded-lg">
+                    <h3 class="font-bold text-red-800 text-sm mb-2">⚠️ 关键疑点</h3>
+                    <ul id="list-reasons" class="list-disc list-inside text-sm text-red-700 space-y-1"></ul>
+                </div>
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <h3 class="font-bold text-green-800 text-sm mb-2">💡 专家建议</h3>
+                    <p id="text-advice" class="text-sm text-green-700"></p>
+                </div>
+                <div class="border-t pt-4">
+                    <p class="text-xs text-gray-400 mb-1">识别原文：</p>
+                    <p id="text-transcript" class="text-xs text-gray-600 bg-gray-100 p-2 rounded max-h-24 overflow-y-auto"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleTab(mode) {
+            const audioArea = document.getElementById('area-audio');
+            const textArea = document.getElementById('area-text');
+            const tabAudio = document.getElementById('tab-audio');
+            const tabText = document.getElementById('tab-text');
+
+            if (mode === 'audio') {
+                audioArea.classList.remove('hidden');
+                textArea.classList.add('hidden');
+                tabAudio.classList.add('border-blue-600', 'text-blue-600');
+                tabAudio.classList.remove('text-gray-500');
+                tabText.classList.remove('border-blue-600', 'text-blue-600');
+                tabText.classList.add('text-gray-500');
+            } else {
+                audioArea.classList.add('hidden');
+                textArea.classList.remove('hidden');
+                tabText.classList.add('border-blue-600', 'text-blue-600');
+                tabText.classList.remove('text-gray-500');
+                tabAudio.classList.remove('border-blue-600', 'text-blue-600');
+                tabAudio.classList.add('text-gray-500');
+            }
+        }
+
+        document.getElementById('analyzeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btnText = document.getElementById('btn-text');
+            const loader = document.getElementById('loading');
+            const resultDiv = document.getElementById('result');
+
+            btnText.innerText = "正在分析...";
+            loader.classList.remove('hidden');
+            resultDiv.classList.add('hidden');
+
+            try {
+                const formData = new FormData(e.target);
+                const res = await fetch('/analyze', { method: 'POST', body: formData });
+                const data = await res.json();
+
+                if (data.error) throw new Error(data.error);
+
+                // 更新界面
+                const score = data.score;
+                document.getElementById('score-val').innerText = score + '%';
+                document.getElementById('score-bar').style.width = score + '%';
+                document.getElementById('text-advice').innerText = data.advice;
+                document.getElementById('text-transcript').innerText = data.transcript;
+
+                // 颜色逻辑
+                const color = score > 70 ? 'bg-red-500' : (score > 30 ? 'bg-yellow-500' : 'bg-green-500');
+                const badge = document.getElementById('risk-badge');
+                badge.className = `px-2 py-0.5 rounded text-white text-xs font-bold ${color}`;
+                badge.innerText = data.risk_level;
+                
+                document.getElementById('score-bar').className = `h-2.5 rounded-full ${color}`;
+                document.getElementById('result').className = `hidden mt-6 bg-white rounded-xl shadow-md p-6 border-l-4 ${score > 70 ? 'border-red-500' : 'border-green-500'}`;
+
+                const list = document.getElementById('list-reasons');
+                list.innerHTML = '';
+                data.reasons.forEach(r => {
+                    const li = document.createElement('li');
+                    li.innerText = r;
+                    list.appendChild(li);
+                });
+
+                resultDiv.classList.remove('hidden');
+            } catch (err) {
+                alert("出错了: " + err.message);
+            } finally {
+                btnText.innerText = "开始智能分析";
+                loader.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
